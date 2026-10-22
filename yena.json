@@ -1,5 +1,10 @@
 {
 	"name": "dev",
-	"version": "0.1.0",
-	"description": "Development module"
+	"version": "0.2.0",
+	"description": "Development tools: dev test runs every test suite with a live progress bar",
+	"runtime": "node",
+	"entry": "src/index.ts",
+	"dependencies": {
+		"core": "git@github.com:hyenayena/core.git"
+	}
 }
