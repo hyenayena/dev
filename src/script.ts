@@ -1,8 +1,8 @@
 export type TestScript = {nodeArgs: string[]; testArgs: string[]; globs: string[]};
 
-const METACHARACTERS = /[;|&<>$`\\(){}\n\r]/;
+export const METACHARACTERS = /[;|&<>$`\\(){}\n\r]/;
 
-function tokenize(script: string): string[] {
+export function tokenize(script: string): string[] {
 	const tokens: string[] = [];
 	let current = '';
 	let started = false;

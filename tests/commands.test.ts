@@ -10,8 +10,10 @@ import type {SpawnFn} from '../src/spawn.js';
 const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'dev-commands-')));
 after(() => rmSync(root, {recursive: true, force: true}));
 mkdirSync(path.join(root, 'modules', 'a'), {recursive: true});
-writeFileSync(path.join(root, 'package.json'), JSON.stringify({scripts: {test: 'node --test "t/*.test.ts"'}}));
-writeFileSync(path.join(root, 'modules', 'a', 'package.json'), JSON.stringify({scripts: {test: 'node --test "t/*.test.ts"'}}));
+writeFileSync(path.join(root, 'package.json'), JSON.stringify({scripts: {test: 'node --test "t/*.test.ts"', typecheck: 'tsc --noEmit'}}));
+mkdirSync(path.join(root, 'node_modules', 'typescript', 'bin'), {recursive: true});
+writeFileSync(path.join(root, 'node_modules', 'typescript', 'bin', 'tsc'), '');
+writeFileSync(path.join(root, 'modules', 'a', 'package.json'), JSON.stringify({scripts: {test: 'node --test "t/*.test.ts"', typecheck: 'tsc -p .'}}));
 
 const done = {code: 0, signal: null, stderr: '', timedOut: false, aborted: false};
 const line = (kind: string): string => JSON.stringify({dev: 1, kind, name: 'x', file: 'f', ms: 1});
@@ -38,14 +40,14 @@ test('dev and dev help print the usage', async () => {
 	for (const args of [[], ['help']]) {
 		const {printed, ctx} = context();
 		await command.run(args, ctx);
-		assert.match(printed.join('\n'), /Usage: dev test \[suite\]/);
+		assert.match(printed.join('\n'), /Usage: dev test\|typecheck\|check \[suite\]/);
 	}
 });
 
 test('unknown subcommands and extra arguments are usage errors', async () => {
 	const command = createDevCommand({root, loadUi: noUi, spawn});
-	await assert.rejects(async () => command.run(['nope'], context().ctx), {message: 'Unknown subcommand: nope. Usage: dev test [suite]'});
-	await assert.rejects(async () => command.run(['test', 'a', 'b'], context().ctx), /Usage: dev test \[suite\]/);
+	await assert.rejects(async () => command.run(['nope'], context().ctx), {message: 'Unknown subcommand: nope. Usage: dev test|typecheck|check [suite]'});
+	await assert.rejects(async () => command.run(['test', 'a', 'b'], context().ctx), /Usage: dev test\|typecheck\|check \[suite\]/);
 	await assert.rejects(async () => command.run(['test', 'zzz'], context().ctx), {message: 'Unknown test suite: zzz. Known: host, a'});
 });
 
@@ -66,7 +68,7 @@ test('a second run while one is active is refused', async () => {
 	};
 	const command = createDevCommand({root, loadUi: noUi, spawn: slow});
 	const first = command.run(['test', 'a'], context().ctx);
-	await assert.rejects(async () => command.run(['test'], context().ctx), {message: 'A test run is already in progress'});
+	await assert.rejects(async () => command.run(['test'], context().ctx), {message: 'A dev run is already in progress'});
 	release();
 	await first;
 	await command.run(['test', 'a'], context().ctx);
@@ -154,4 +156,105 @@ test('the abort listener is removed after the run', async () => {
 	await command.run(['test', 'a'], context({signal}).ctx);
 	assert.deepEqual(added, ['abort']);
 	assert.deepEqual(removed, ['abort']);
+});
+
+const isTsc = (args: string[]): boolean => args[0]?.endsWith('tsc') === true;
+const failingTsc: SpawnFn = async (args, options) => {
+	if (!isTsc(args)) return spawn(args, options);
+	options.onLine('a.ts(1,1): error TS1005: oops');
+	return {...done, code: 2};
+};
+
+test('typecheck prints one line per suite and a summary', async () => {
+	const command = createDevCommand({root, loadUi: noUi, spawn: async () => done});
+	const {printed, ctx} = context();
+	await command.run(['typecheck'], ctx);
+	assert.match(printed[0] as string, /^Typechecking 2 suites/);
+	assert.match(printed[1] as string, /^✔ host typecheck · /);
+	assert.match(printed.at(-1) as string, /^Typecheck: 2\/2 passed · 0 failed · /);
+});
+
+test('check runs the tests only after a passing typecheck', async () => {
+	const order: string[] = [];
+	const tracking: SpawnFn = async (args, options) => {
+		order.push(isTsc(args) ? 'tsc' : 'test');
+		return spawn(args, options);
+	};
+	const command = createDevCommand({root, loadUi: noUi, spawn: tracking});
+	const {printed, ctx} = context();
+	await command.run(['check', 'a'], ctx);
+	assert.equal(order[0], 'tsc');
+	assert.ok(order.includes('test'));
+	assert.match(printed.at(-1) as string, /^Tests: 2\/2 passed/);
+
+	order.length = 0;
+	const failing = createDevCommand({root, loadUi: noUi, spawn: failingTsc});
+	const second = context();
+	await failing.run(['check', 'a'], second.ctx);
+	assert.match(second.printed.join('\n'), /Tests skipped: the typecheck did not pass/);
+	assert.ok(!second.printed.join('\n').includes('Running'));
+});
+
+test('headless failures throw after the summary, the UI keeps printing only', async () => {
+	const command = createDevCommand({root, loadUi: noUi, spawn: failingTsc});
+	const headless = context({headless: true});
+	await assert.rejects(async () => command.run(['typecheck', 'a'], headless.ctx), {message: '1 suite failed'});
+	assert.match(headless.printed.at(-1) as string, /^Typecheck: 0\/1 passed · 1 failed/);
+	const ui = context();
+	await command.run(['typecheck', 'a'], ui.ctx);
+
+	const failingTest: SpawnFn = async (args, options) => (args.some(a => a.endsWith('discover.ts')) ? spawn(args, options) : {...done, code: 1});
+	const tests = createDevCommand({root, loadUi: noUi, spawn: failingTest});
+	const run = context({headless: true});
+	await assert.rejects(async () => tests.run(['test', 'a'], run.ctx), /suites? failed$/);
+	assert.match(run.printed.at(-1) as string, /^Tests:/);
+	await tests.run(['test', 'a'], context().ctx);
+
+	await assert.rejects(async () => command.run(['check', 'a'], context({headless: true}).ctx), {message: '1 suite failed'});
+	await createDevCommand({root, loadUi: noUi, spawn}).run(['test', 'a'], context({headless: true}).ctx);
+});
+
+test('signal handlers exist only during a headless run and abort it', async () => {
+	const counts = (): number[] => ['SIGINT', 'SIGTERM', 'SIGHUP'].map(s => process.listenerCount(s));
+	const before = counts();
+	let during: number[] = [];
+	let sawAbort = false;
+	const watching: SpawnFn = async (args, options) => {
+		if (!isTsc(args)) return spawn(args, options);
+		during = counts();
+		process.emit('SIGHUP');
+		sawAbort = options.signal?.aborted === true;
+		return {...done, code: null, aborted: true};
+	};
+	const command = createDevCommand({root, loadUi: noUi, spawn: watching});
+	await assert.rejects(async () => command.run(['typecheck', 'a'], context({headless: true}).ctx), /failed$/);
+	assert.deepEqual(during, before.map(n => n + 1));
+	assert.equal(sawAbort, true);
+	assert.deepEqual(counts(), before);
+
+	let uiDuring: number[] = [];
+	const uiWatch: SpawnFn = async () => {
+		uiDuring = counts();
+		return done;
+	};
+	await createDevCommand({root, loadUi: noUi, spawn: uiWatch}).run(['typecheck', 'a'], context().ctx);
+	assert.deepEqual(uiDuring, before);
+});
+
+test('the run lock is shared by typecheck and check and released after a refused or failed start', async () => {
+	let release: () => void = () => {};
+	const gate = new Promise<void>(resolve => (release = resolve));
+	const slow: SpawnFn = async (args, options) => {
+		await gate;
+		return spawn(args, options);
+	};
+	const command = createDevCommand({root, loadUi: noUi, spawn: slow});
+	const first = command.run(['typecheck', 'a'], context().ctx);
+	for (const sub of ['test', 'check', 'typecheck']) {
+		await assert.rejects(async () => command.run([sub, 'a'], context().ctx), {message: 'A dev run is already in progress'}, sub);
+	}
+	release();
+	await Promise.resolve(first).catch(() => undefined);
+	await assert.rejects(async () => command.run(['typecheck', 'nope'], context().ctx), /Unknown test suite/);
+	await assert.rejects(async () => command.run(['check', 'nope'], context().ctx), /Unknown test suite/);
 });

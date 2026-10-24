@@ -13,8 +13,10 @@ function inside(root: string, target: string): boolean {
 	return target === root || target.startsWith(root + path.sep);
 }
 
-// Undefined: nothing to run (no package.json or no test script). Throws: unreadable or unsafe.
-function readTestScript(dir: string): string | undefined {
+export type ScriptKey = 'test' | 'typecheck';
+
+// Undefined: nothing to run (no package.json or no such script). Throws: unreadable or unsafe.
+function readScript(dir: string, key: ScriptKey): string | undefined {
 	const file = path.join(dir, 'package.json');
 	let info;
 	try {
@@ -27,11 +29,11 @@ function readTestScript(dir: string): string | undefined {
 	if (info.size > MAX_PACKAGE_JSON) throw new Error('package.json is too large');
 	const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
 	const scripts = (parsed as {scripts?: unknown} | null)?.scripts;
-	const test = (scripts as {test?: unknown} | null | undefined)?.test;
-	return typeof test === 'string' ? test : undefined;
+	const script = (scripts as Record<string, unknown> | null | undefined)?.[key];
+	return typeof script === 'string' ? script : undefined;
 }
 
-export function findSuites(root: string, log: Logger = noopLog): Suite[] {
+export function findSuites(root: string, log: Logger = noopLog, key: ScriptKey = 'test'): Suite[] {
 	const realRoot = realpathSync(root);
 	const suites: Suite[] = [];
 	const add = (name: string, dir: string): void => {
@@ -39,7 +41,7 @@ export function findSuites(root: string, log: Logger = noopLog): Suite[] {
 			const real = realpathSync(dir);
 			if (!inside(realRoot, real)) throw new Error('directory leaves the yena root');
 			if (!statSync(real).isDirectory()) return;
-			const script = readTestScript(real);
+			const script = readScript(real, key);
 			if (script !== undefined) suites.push({name, dir: real, script});
 		} catch (err) {
 			log.warn('suite skipped', {suite: name, err});

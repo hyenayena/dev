@@ -80,3 +80,15 @@ test('a module directory named host never shadows the root suite', () => {
 	assert.equal(hosts.length, 1);
 	assert.equal(hosts[0]?.dir, realpathSync(root));
 });
+
+test('the typecheck key finds suites with a typecheck script only', () => {
+	const root = path.join(base, 'typecheck-tree');
+	mkdirSync(path.join(root, 'modules', 'a'), {recursive: true});
+	mkdirSync(path.join(root, 'modules', 'b'), {recursive: true});
+	writeFileSync(path.join(root, 'package.json'), JSON.stringify({scripts: {test: SCRIPT, typecheck: 'tsc --noEmit'}}));
+	writeFileSync(path.join(root, 'modules', 'a', 'package.json'), JSON.stringify({scripts: {typecheck: 'tsc -p .'}}));
+	writeFileSync(path.join(root, 'modules', 'b', 'package.json'), pkg(SCRIPT));
+	const found = findSuites(root, noopLog, 'typecheck');
+	assert.deepEqual(found.map(s => [s.name, s.script]), [['host', 'tsc --noEmit'], ['a', 'tsc -p .']]);
+	assert.deepEqual(findSuites(root, noopLog).map(s => s.name), ['host', 'b']);
+});
