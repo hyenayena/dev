@@ -117,9 +117,9 @@ export function createDevCommand(deps: DevDeps): Command {
 		description: 'Development tools',
 		usage: USAGE,
 		subcommands: [
-			{name: 'test', usage: USAGE, description: 'Run the test suites with a live progress bar'},
-			{name: 'typecheck', usage: USAGE, description: 'Typecheck the suites with tsc'},
-			{name: 'check', usage: USAGE, description: 'Typecheck, then run the tests if the typecheck passed'},
+			{name: 'test', usage: 'dev test [suite]', description: 'Run the test suites with a live progress bar'},
+			{name: 'typecheck', usage: 'dev typecheck [suite]', description: 'Typecheck the suites with tsc'},
+			{name: 'check', usage: 'dev check [suite]', description: 'Typecheck, then run the tests if the typecheck passed'},
 		],
 		async run(args, ctx) {
 			const [sub, ...rest] = args;

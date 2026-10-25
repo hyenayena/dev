@@ -258,3 +258,8 @@ test('the run lock is shared by typecheck and check and released after a refused
 	await assert.rejects(async () => command.run(['typecheck', 'nope'], context().ctx), /Unknown test suite/);
 	await assert.rejects(async () => command.run(['check', 'nope'], context().ctx), /Unknown test suite/);
 });
+
+test('each subcommand shows its own usage', () => {
+	const usages = createDevCommand({root, loadUi: noUi, spawn}).subcommands!.map(s => s.usage);
+	assert.deepEqual(usages, ['dev test [suite]', 'dev typecheck [suite]', 'dev check [suite]']);
+});
