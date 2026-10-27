@@ -19,6 +19,8 @@ export type RunDeps = {
 	store: RunStore;
 	log?: Logger;
 	spawn: SpawnFn;
+	/** Only tests whose name matches run (node's --test-name-pattern); no plan is discovered then. */
+	namePattern?: string;
 };
 
 export type ResultLine = {kind: 'pass' | 'fail' | 'skip' | 'todo'; name: string; file: string; ms: number; error?: string};
@@ -101,7 +103,9 @@ export async function runTests(deps: RunDeps): Promise<RunOutcome> {
 	});
 	for (const suite of suites) {
 		try {
-			scripts.set(suite.name, parseTestScript(suite.script));
+			const parsed = parseTestScript(suite.script);
+			// Chosen files replace the script's globs; its flags stay.
+			scripts.set(suite.name, suite.files ? {...parsed, globs: suite.files} : parsed);
 		} catch {
 			patch(suite.name, s => {
 				s.status = 'error';
@@ -159,7 +163,8 @@ export async function runTests(deps: RunDeps): Promise<RunOutcome> {
 			await discover(runnable[next++] as Suite);
 		}
 	};
-	await Promise.all(Array.from({length: Math.min(DISCOVERY_PARALLEL, runnable.length)}, worker));
+	// With a name filter the discovered totals would count tests that never run.
+	if (deps.namePattern === undefined) await Promise.all(Array.from({length: Math.min(DISCOVERY_PARALLEL, runnable.length)}, worker));
 
 	const planned = store.get().suites.reduce((n, s) => n + s.planned, 0);
 	log.info('test run started', {suites: runnable.length, planned});
@@ -188,6 +193,7 @@ export async function runTests(deps: RunDeps): Promise<RunOutcome> {
 					`--test-reporter=${REPORTER}`,
 					'--test-reporter-destination=stdout',
 					...script.testArgs,
+					...(deps.namePattern === undefined ? [] : [`--test-name-pattern=${deps.namePattern}`]),
 					...script.globs,
 				],
 				{

@@ -40,14 +40,15 @@ test('dev and dev help print the usage', async () => {
 	for (const args of [[], ['help']]) {
 		const {printed, ctx} = context();
 		await command.run(args, ctx);
-		assert.match(printed.join('\n'), /Usage: dev test\|typecheck\|check \[suite\]/);
+		assert.match(printed.join('\n'), /Usage: dev test\|typecheck\|check \[suite…\] \[--file <path>\]… \[--name <pattern>\]/);
 	}
 });
 
 test('unknown subcommands and extra arguments are usage errors', async () => {
 	const command = createDevCommand({root, loadUi: noUi, spawn});
-	await assert.rejects(async () => command.run(['nope'], context().ctx), {message: 'Unknown subcommand: nope. Usage: dev test|typecheck|check [suite]'});
-	await assert.rejects(async () => command.run(['test', 'a', 'b'], context().ctx), /Usage: dev test\|typecheck\|check \[suite\]/);
+	await assert.rejects(async () => command.run(['nope'], context().ctx), {message: 'Unknown subcommand: nope. Usage: dev test|typecheck|check [suite…] [--file <path>]… [--name <pattern>]'});
+	await assert.rejects(async () => command.run(['test', '--bogus'], context().ctx), {message: 'Unknown option: --bogus'});
+	await assert.rejects(async () => command.run(['typecheck', '--name', 'x'], context().ctx), /apply to tests/);
 	await assert.rejects(async () => command.run(['test', 'zzz'], context().ctx), {message: 'Unknown test suite: zzz. Known: host, a'});
 });
 
@@ -261,5 +262,58 @@ test('the run lock is shared by typecheck and check and released after a refused
 
 test('each subcommand shows its own usage', () => {
 	const usages = createDevCommand({root, loadUi: noUi, spawn}).subcommands!.map(s => s.usage);
-	assert.deepEqual(usages, ['dev test [suite]', 'dev typecheck [suite]', 'dev check [suite]']);
+	assert.deepEqual(usages, [
+		'dev test [suite…] [--file <path>]… [--name <pattern>]',
+		'dev typecheck [suite…]',
+		'dev check [suite…] [--file <path>]… [--name <pattern>]',
+	]);
+});
+
+test('several suites run in one go, in suite order', async () => {
+	const cwds: string[] = [];
+	const tracking: SpawnFn = async (args, options) => {
+		if (!args.some(a => a.endsWith('discover.ts'))) cwds.push(options.cwd);
+		return spawn(args, options);
+	};
+	const command = createDevCommand({root, loadUi: noUi, spawn: tracking});
+	await command.run(['test', 'a', 'host', 'a'], context().ctx);
+	assert.deepEqual(cwds, [root, path.join(root, 'modules', 'a')]);
+});
+
+test('--file runs only the given files in the suite that holds them, --name filters by test name', async () => {
+	mkdirSync(path.join(root, 'modules', 'a', 't'), {recursive: true});
+	writeFileSync(path.join(root, 'modules', 'a', 't', 'one.test.ts'), '');
+	const runs: {cwd: string; args: string[]}[] = [];
+	let discovered = 0;
+	const tracking: SpawnFn = async (args, options) => {
+		if (args.some(a => a.endsWith('discover.ts'))) discovered++;
+		else runs.push({cwd: options.cwd, args});
+		return spawn(args, options);
+	};
+	const command = createDevCommand({root, loadUi: noUi, spawn: tracking});
+	await command.run(['test', '--file', 'modules/a/t/one.test.ts'], context().ctx);
+	assert.equal(runs.length, 1);
+	assert.equal(runs[0]!.cwd, path.join(root, 'modules', 'a'));
+	assert.deepEqual(runs[0]!.args.slice(-1), [path.join('t', 'one.test.ts')]);
+	assert.ok(!runs[0]!.args.includes('t/*.test.ts'));
+
+	runs.length = 0;
+	await command.run(['test', 'a', '--file=t/one.test.ts', '--name', 'only this'], context().ctx);
+	assert.ok(runs[0]!.args.includes('--test-name-pattern=only this'));
+	assert.equal(discovered, 1);
+
+	await assert.rejects(async () => command.run(['test', 'host', '--file', 'modules/a/t/one.test.ts'], context().ctx), {message: 'modules/a/t/one.test.ts is not in suite host'});
+	await assert.rejects(async () => command.run(['test', '--file', 'nope.test.ts'], context().ctx), {message: 'No such test file: nope.test.ts'});
+	await assert.rejects(async () => command.run(['test', '--file', 'package.json'], context().ctx), {message: 'Not a test file: package.json'});
+});
+
+test('runs through the console bridge (ctx.signal) print the summary without bars', async () => {
+	const command = createDevCommand({root, loadUi: noUi, spawn});
+	const bridged = context({signal: new AbortController().signal});
+	await command.run(['test', 'a'], bridged.ctx);
+	const plain = context();
+	await command.run(['test', 'a'], plain.ctx);
+	const braille = /[\u2800-\u28ff]/;
+	assert.ok(!braille.test(bridged.printed.at(-1) as string));
+	assert.ok(braille.test(plain.printed.at(-1) as string));
 });

@@ -15,8 +15,8 @@ const ICON: Record<SuiteState['status'], string> = {
 	cancelled: '·',
 };
 
-/** Final report for `ctx.print`; `color` adds SGR to the bars only. */
-export function summaryLines(state: RunState, options: {columns: number; color: boolean}): string[] {
+/** Final report for `ctx.print`; `color` adds SGR to the bars only; `bars: false` leaves the bars out. */
+export function summaryLines(state: RunState, options: {columns: number; color: boolean; bars?: boolean}): string[] {
 	const width = Math.max(1, Math.floor(options.columns) - 1);
 	const all = state.suites.flatMap(s => s.states);
 	const planned = state.suites.reduce((n, s) => n + Math.max(s.planned, s.states.length), 0);
@@ -29,6 +29,7 @@ export function summaryLines(state: RunState, options: {columns: number; color: 
 		if (suite.ms !== undefined) parts.push(formatDuration(suite.ms));
 		if (suite.note) parts.push(sanitizeText(suite.note, 80));
 		lines.push(parts.join(' '));
+		if (options.bars === false) continue;
 		const states = suite.states.slice();
 		while (states.length < suite.planned) states.push('pending');
 		for (const row of brailleRows(brailleCells(states), width).rows) lines.push(brailleText(row, {color: options.color}));
