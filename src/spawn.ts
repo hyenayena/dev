@@ -21,7 +21,8 @@ export type SpawnFn = (args: string[], options: SpawnOptions) => Promise<SpawnRe
 const MAX_LINE = 64 * 1024;
 const STDERR_TAIL = 4 * 1024;
 const KILL_GRACE_MS = 3000;
-const SCRUBBED_ENV = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'NODE_TEST_CONTEXT'];
+// YENA_DEV_CHILD marks the yena process the dev launcher started; checks run from it must not inherit that role.
+const SCRUBBED_ENV = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'NODE_TEST_CONTEXT', 'YENA_DEV_CHILD'];
 
 const live = new Set<ChildProcess>();
 

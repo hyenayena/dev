@@ -174,15 +174,15 @@ test('abort kills the whole process group', async () => {
 	assert.ok(await waitGone(pids));
 });
 
-test('credentials and the test-runner context never reach the child', async () => {
-	const names = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'NODE_TEST_CONTEXT'];
+test('credentials, the test-runner context and the dev child marker never reach the child', async () => {
+	const names = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'NODE_TEST_CONTEXT', 'YENA_DEV_CHILD'];
 	const saved = names.map(n => process.env[n]);
 	for (const n of names) process.env[n] = 'dummy-value';
 	try {
 		const lines: string[] = [];
 		const script = `console.log(JSON.stringify([${names.map(n => `process.env.${n} ?? null`).join(',')}, process.env.EXTRA ?? null]))`;
 		await spawnNode(['-e', script], {cwd: work, env: {EXTRA: 'kept', ANTHROPIC_API_KEY: 'dummy-2'}, onLine: l => lines.push(l)});
-		assert.deepEqual(JSON.parse(lines[0] as string), [null, null, null, 'kept']);
+		assert.deepEqual(JSON.parse(lines[0] as string), [null, null, null, null, 'kept']);
 	} finally {
 		names.forEach((n, i) => {
 			if (saved[i] === undefined) delete process.env[n];

@@ -317,3 +317,23 @@ test('runs through the console bridge (ctx.signal) print the summary without bar
 	assert.ok(!braille.test(bridged.printed.at(-1) as string));
 	assert.ok(braille.test(plain.printed.at(-1) as string));
 });
+
+test('a root given as a function is asked on every run, and its error ends the run cleanly', async () => {
+	let calls = 0;
+	let fail = true;
+	const command = createDevCommand({
+		root: () => {
+			calls++;
+			if (fail) throw new Error('No yena working copy in /workplace/yena');
+			return root;
+		},
+		loadUi: noUi,
+		spawn,
+	});
+	await assert.rejects(async () => command.run(['test', 'a'], context().ctx), /No yena working copy in \/workplace\/yena/);
+	fail = false;
+	const {printed, ctx} = context();
+	await command.run(['test', 'a'], ctx);
+	assert.equal(calls, 2);
+	assert.match(printed.at(-1) as string, /^Tests: 2\/2 passed/);
+});

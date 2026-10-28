@@ -13,6 +13,8 @@ Development tools for a yena checkout, as a plugin (requires core 0.3.0+).
 - From the terminal (`./yena dev …`, `ctx.headless`) a failure prints the summary and exits 1 (`<n> suite(s) failed`; a cancelled suite counts as failed). In the UI the commands only print.
 
 ## How it works
+Which yena root is checked (`src/root.ts` `targetRoot`, asked on every run): the module's own root (`modules/dev/../..`), unless that is on a read-only filesystem (`EROFS`: the image at `/app`); then the working copy the host names in `BuildInfo.root.workCopy` (`/workplace/yena` by default, `mode dev [path]`), which must hold `package.json` and `modules/` (`No yena working copy in <path>`; on an older host without the field: `… names no working copy; update the host`). In dev mode the module already runs from the working copy, so its own root is that copy. Suites, `--file` paths, child cwd and `tsc` (the root's `node_modules/typescript`) all follow that root, so the working copy needs its own `./yena install`.
+
 
 1. Each suite's `package.json` `test` script is parsed (`src/script.ts`), never run through a shell. Only `node [flags] --test [--test-* flags] <globs>` is accepted; shell metacharacters, unquoted globs and `--test-reporter*` are rejected (`Unsupported test script in <suite>`).
 2. Discovery (`src/child/discover.ts`): up to 4 suites in parallel, each in a child that replaces `node:test` with a counting stub (`src/child/test-shim.ts`) and imports every test file without running a test body. This gives the planned total before the first real test runs. Files are counted as `max(1, registered tests)`, a file failing to import as 1. The child runs with a private `TMPDIR` that dev deletes afterwards. If discovery fails the bar grows as results arrive (`(unplanned)`).
@@ -28,7 +30,7 @@ Tests: `npm test` in this directory (they also run inside `dev test`, so the tes
 
 ## Residual risks
 
-- Test scripts and test files of the other modules run with full rights, as they would from a shell. `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN` and `NODE_TEST_CONTEXT` are removed from the child environment; other variables are inherited.
+- Test scripts and test files of the other modules run with full rights, as they would from a shell. `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `NODE_TEST_CONTEXT` and `YENA_DEV_CHILD` (set in the yena process the dev launcher started; inherited, it would turn the host's overlay off in the tests) are removed from the child environment; other variables are inherited.
 - Discovery imports test files, so top-level code of a test file runs (temp files go to the private `TMPDIR`; other side effects are not contained). Tests registered asynchronously or as subtests are not counted in the plan; the bar grows when more results arrive than planned.
 - Children run in their own process group; cancel sends SIGTERM to the group and SIGKILL after 3 s, and an exit hook sends SIGKILL to live groups. In headless mode only, SIGINT/SIGTERM/SIGHUP handlers stop the children; in the UI no handlers are installed, so SIGTERM/SIGKILL on yena itself can leave a run alive until it ends.
 - `-p` in a `typecheck` script may point outside the suite dir (tsc only reads that tsconfig); low risk.

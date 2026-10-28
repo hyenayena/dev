@@ -16,7 +16,8 @@ export type DevUi = {
 };
 
 export type DevDeps = {
-	root: string;
+	/** The yena root to check; a function is asked on every run (the working copy may appear later). */
+	root: string | (() => string);
 	log?: Logger;
 	loadUi: () => Promise<DevUi>;
 	spawn?: SpawnFn;
@@ -69,12 +70,12 @@ export function createDevCommand(deps: DevDeps): Command {
 	const log = deps.log ?? noopLog;
 	let running = false;
 
-	const typecheckPhase = async (suites: Suite[], controller: AbortController, ctx: CommandContext): Promise<number> => {
+	const typecheckPhase = async (suites: Suite[], controller: AbortController, ctx: CommandContext, root: string): Promise<number> => {
 		ctx.print(`Typechecking ${plural(suites.length, 'suite')}...`);
 		const started = Date.now();
 		const results = await runTypecheck({
 			suites,
-			root: deps.root,
+			root,
 			signal: controller.signal,
 			spawn: deps.spawn ?? spawnNode,
 			log,
@@ -143,14 +144,15 @@ export function createDevCommand(deps: DevDeps): Command {
 			running = true;
 			let removeSignals: (() => void) | undefined;
 			try {
-				let testSuites = mode === 'typecheck' ? [] : selectSuites(findSuites(deps.root, log), opts.suites);
-				if (opts.files.length > 0) testSuites = assignFiles(testSuites, opts.files, deps.root);
+				const root = typeof deps.root === 'function' ? deps.root() : deps.root;
+				let testSuites = mode === 'typecheck' ? [] : selectSuites(findSuites(root, log), opts.suites);
+				if (opts.files.length > 0) testSuites = assignFiles(testSuites, opts.files, root);
 				// With files, check typechecks just the suites they belong to.
 				const typecheckNames = opts.files.length > 0 ? testSuites.map(s => s.name) : opts.suites;
 				const typecheckSuites =
 					mode === 'test'
 						? []
-						: selectSuites(findSuites(deps.root, log, 'typecheck'), opts.files.length > 0 ? [] : opts.suites).filter(
+						: selectSuites(findSuites(root, log, 'typecheck'), opts.files.length > 0 ? [] : opts.suites).filter(
 								s => typecheckNames.length === 0 || typecheckNames.includes(s.name),
 							);
 				if (mode !== 'test' && typecheckSuites.length === 0) throw new Error('No typecheck suites found');
@@ -165,7 +167,7 @@ export function createDevCommand(deps: DevDeps): Command {
 
 				let failed = 0;
 				try {
-					if (mode !== 'test') failed += await typecheckPhase(typecheckSuites, controller, ctx);
+					if (mode !== 'test') failed += await typecheckPhase(typecheckSuites, controller, ctx, root);
 					if (mode !== 'typecheck') {
 						if (failed > 0) ctx.print('Tests skipped: the typecheck did not pass');
 						else failed += await testPhase(testSuites, controller, ctx, opts.name);

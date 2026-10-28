@@ -4,6 +4,7 @@ import {fileURLToPath} from 'node:url';
 import type {ModulePlugin} from '../../../src/api.js';
 import {createDevCommand, type DevUi} from './commands.js';
 import {noopLog} from './log.js';
+import {targetRoot} from './root.js';
 import {killAll} from './spawn.js';
 
 let exitHookInstalled = false;
@@ -21,7 +22,7 @@ const plugin: ModulePlugin = host => {
 	log.info('plugin loaded');
 	return [
 		createDevCommand({
-			root,
+			root: () => targetRoot(root, host.build),
 			log,
 			loadUi,
 			onRun: () => {
