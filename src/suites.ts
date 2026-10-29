@@ -4,7 +4,6 @@ import type {Logger} from '../../../src/api.js';
 import {sanitizeText} from './kit.js';
 import {noopLog} from './log.js';
 
-/** `files`: test files (relative to `dir`) that replace the script's globs. */
 export type Suite = {name: string; dir: string; script: string; files?: string[]};
 
 const NAME = /^[a-z0-9][a-z0-9._-]*$/;
@@ -16,7 +15,6 @@ function inside(root: string, target: string): boolean {
 
 export type ScriptKey = 'test' | 'typecheck';
 
-// Undefined: nothing to run (no package.json or no such script). Throws: unreadable or unsafe.
 function readScript(dir: string, key: ScriptKey): string | undefined {
 	const file = path.join(dir, 'package.json');
 	let info;
@@ -59,7 +57,6 @@ export function findSuites(root: string, log: Logger = noopLog, key: ScriptKey =
 	return suites;
 }
 
-/** Every suite for no names, else the named ones in the order of `all`. */
 export function selectSuites(all: Suite[], names?: string | readonly string[]): Suite[] {
 	const wanted = names === undefined ? [] : typeof names === 'string' ? [names] : names;
 	if (wanted.length === 0) return all;
@@ -73,11 +70,6 @@ export function selectSuites(all: Suite[], names?: string | readonly string[]): 
 
 const TEST_FILE = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;
 
-/**
- * Puts each file into the suite whose folder holds it (the deepest one: a module inside the host).
- * A relative path is taken from the one candidate suite, or else from the yena root. Returns only the
- * suites that got files. Throws for a missing file, a non-test file or one outside every candidate.
- */
 export function assignFiles(candidates: Suite[], files: readonly string[], root: string): Suite[] {
 	const base = candidates.length === 1 ? (candidates[0] as Suite).dir : realpathSync(root);
 	const byName = new Map<string, string[]>();
@@ -90,7 +82,6 @@ export function assignFiles(candidates: Suite[], files: readonly string[], root:
 			throw new Error(`No such test file: ${shown}`);
 		}
 		if (!statSync(real).isFile() || !TEST_FILE.test(real)) throw new Error(`Not a test file: ${shown}`);
-		// A module's file never runs in the host suite, even when only host was named.
 		const owner = candidates
 			.filter(s => inside(s.dir, real) && !(s.name === 'host' && inside(path.join(s.dir, 'modules'), real)))
 			.sort((a, b) => b.dir.length - a.dir.length)[0];

@@ -246,7 +246,6 @@ test('killAll kills every live process group synchronously', async () => {
 		try {
 			pids = JSON.parse(readFileSync(pidFile, 'utf8')) as number[];
 		} catch {
-			// not written yet
 		}
 	}
 	assert.ok(pids.length === 2 && pids.every(alive));

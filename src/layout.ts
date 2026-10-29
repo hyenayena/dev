@@ -54,7 +54,6 @@ function failureGroups(failures: Failure[], textWidth: number): LayoutRow[][] {
 	});
 }
 
-/** Rows for the progress panel; never more than `rows` lines, each at most `columns - 1` cells wide. */
 export function layoutRun(state: RunState, columns: number, rows: number): LayoutRow[] {
 	const width = Math.max(1, Math.floor(columns) - 1);
 	const budget = Math.max(1, Math.floor(rows));
@@ -119,7 +118,6 @@ export function layoutRun(state: RunState, columns: number, rows: number): Layou
 
 	const result = build(cfg);
 	if (rowCount(result) <= budget) return result;
-	// Hard clamp: only headers are left, keep the hint on the last line.
 	const keep = hint ? budget - 1 : budget;
 	const body = result.filter(r => r !== hint).slice(0, Math.max(0, keep));
 	return hint && budget >= 1 ? [...body, hint] : body;

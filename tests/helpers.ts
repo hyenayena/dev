@@ -21,7 +21,6 @@ export const alive = (pid: number): boolean => {
 	}
 };
 
-// A killed process stays visible as a zombie until its reaper (PID 1 in the container) collects it.
 export async function waitGone(pids: number[], timeoutMs = 3000): Promise<boolean> {
 	const deadline = Date.now() + timeoutMs;
 	while (pids.some(alive) && Date.now() < deadline) await new Promise(r => setTimeout(r, 20));

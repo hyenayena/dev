@@ -1,9 +1,6 @@
 export type DevArgs = {
-	/** Suite names in the order given, without repeats; empty means every suite. */
 	suites: string[];
-	/** Test files as typed: absolute, or relative to the one named suite or to the yena root. */
 	files: string[];
-	/** Runs only the tests whose name matches (node's --test-name-pattern, a regular expression). */
 	name?: string;
 };
 
@@ -20,7 +17,6 @@ const takeValue = (flag: string, args: string[], i: number): [string, number] =>
 	return [next, i + 1];
 };
 
-/** `[suite…] [--file <path>]… [--name <pattern>]` after the subcommand. */
 export function parseDevArgs(args: string[]): DevArgs {
 	const out: DevArgs = {suites: [], files: []};
 	for (let i = 0; i < args.length; i++) {

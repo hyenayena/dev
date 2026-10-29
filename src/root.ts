@@ -2,7 +2,6 @@ import {accessSync, constants, existsSync, realpathSync} from 'node:fs';
 import path from 'node:path';
 import type {BuildInfo} from '../../../src/api.js';
 
-/** True only for a read-only filesystem (EROFS): the image; permissions do not count, the container runs as root. */
 export function isReadOnlyDir(dir: string): boolean {
 	try {
 		accessSync(dir, constants.W_OK);
@@ -12,10 +11,6 @@ export function isReadOnlyDir(dir: string): boolean {
 	}
 }
 
-/**
- * The yena root dev checks: its own (a writable checkout, or the working copy in dev mode), or, when that
- * is the read-only image, the working copy the host names (`BuildInfo.root.workCopy`, `/workplace/yena`).
- */
 export function targetRoot(ownRoot: string, build: BuildInfo | undefined, readOnly: (dir: string) => boolean = isReadOnlyDir): string {
 	if (!readOnly(ownRoot)) return ownRoot;
 	const copy = build?.root?.workCopy;

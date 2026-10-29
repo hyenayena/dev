@@ -12,7 +12,6 @@ registerHooks({
 	},
 });
 
-// Imported test files may leave async errors behind; discovery only needs the count.
 process.on('uncaughtException', () => {});
 process.on('unhandledRejection', () => {});
 

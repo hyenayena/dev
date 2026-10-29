@@ -30,7 +30,6 @@ export function tokenize(script: string): string[] {
 	return tokens;
 }
 
-/** Splits a package.json `test` script of the form `node [flags] --test [--test-* flags] <globs>`; never runs a shell. */
 export function parseTestScript(script: string): TestScript {
 	if (METACHARACTERS.test(script)) throw new Error('shell metacharacter');
 	const tokens = tokenize(script);

@@ -27,7 +27,6 @@ export function mountHarness(element: ReactElement, size = {columns: 60, rows: 2
 	});
 	return {
 		press: (sequence: string) => stdin.write(sequence),
-		// Escape is flushed by Ink after 20 ms, so waits must exceed that
 		settle: (ms = 60) => wait(ms),
 		lastFrame: () => chunks.at(-1) ?? '',
 		unmount: () => instance.unmount(),

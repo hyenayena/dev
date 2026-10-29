@@ -32,7 +32,6 @@ const MAX_LINE_LENGTH = 300;
 const STEP_TIMEOUT_MS = 10 * 60_000;
 const ERROR_LINE = /error TS\d+/;
 
-/** Splits a package.json `typecheck` script of the form `tsc [-p <dir>|--noEmit] && ...`; never runs a shell. */
 export function parseTypecheckScript(script: string): string[][] {
 	const steps: string[][] = [];
 	for (const part of script.split('&&')) {

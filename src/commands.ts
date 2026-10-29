@@ -16,7 +16,6 @@ export type DevUi = {
 };
 
 export type DevDeps = {
-	/** The yena root to check; a function is asked on every run (the working copy may appear later). */
 	root: string | (() => string);
 	log?: Logger;
 	loadUi: () => Promise<DevUi>;
@@ -25,7 +24,6 @@ export type DevDeps = {
 };
 
 const ARGS = '[suite…] [--file <path>]… [--name <pattern>]';
-// The one-line form in usage errors.
 const LINE = `dev test|typecheck|check ${ARGS}`;
 const USAGE = 'dev <subcommand>';
 const SUITE = {name: 'suite', description: 'host or a module name; none: all of them'};
@@ -59,7 +57,6 @@ function typecheckLines(result: TypecheckResult): string[] {
 	return lines;
 }
 
-// Children run in their own process groups, so a terminal Ctrl+C or a hangup would not reach them.
 function abortOnSignals(controller: AbortController): () => void {
 	const handler = (): void => controller.abort();
 	for (const sig of SIGNALS) process.once(sig, handler);
@@ -117,7 +114,6 @@ export function createDevCommand(deps: DevDeps): Command {
 		}
 		const columns = view?.host?.columns() ?? FALLBACK_COLUMNS;
 		const state = store.get();
-		// ctx.signal is set only for runs through the console bridge (assistant, scheduler): bars are noise there.
 		ctx.print(summaryLines(state, {columns, color, bars: ctx.signal === undefined}).join('\n'));
 		const bad = state.suites.filter(s => s.status !== 'passed').length;
 		return state.phase === 'cancelled' ? Math.max(1, bad) : bad;
@@ -165,7 +161,6 @@ export function createDevCommand(deps: DevDeps): Command {
 				const root = typeof deps.root === 'function' ? deps.root() : deps.root;
 				let testSuites = mode === 'typecheck' ? [] : selectSuites(findSuites(root, log), opts.suites);
 				if (opts.files.length > 0) testSuites = assignFiles(testSuites, opts.files, root);
-				// With files, check typechecks just the suites they belong to.
 				const typecheckNames = opts.files.length > 0 ? testSuites.map(s => s.name) : opts.suites;
 				const typecheckSuites =
 					mode === 'test'

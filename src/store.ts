@@ -37,7 +37,6 @@ const copy = (state: RunState): RunState => ({
 	suites: state.suites.map(s => ({...s, states: s.states.slice(), failures: s.failures.slice()})),
 });
 
-/** Lives outside React: the panel toggle unmounts the view, a remount reads the current state. */
 export function createRunStore(now: () => number = Date.now): RunStore {
 	const state: RunState = {phase: 'discovering', startedAt: now(), suites: []};
 	const listeners = new Set<() => void>();
@@ -53,7 +52,6 @@ export function createRunStore(now: () => number = Date.now): RunStore {
 			try {
 				listener();
 			} catch {
-				// a faulty subscriber must not stop the others
 			}
 		}
 	};

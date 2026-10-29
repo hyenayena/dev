@@ -15,7 +15,6 @@ const ICON: Record<SuiteState['status'], string> = {
 	cancelled: '·',
 };
 
-/** Final report for `ctx.print`; `color` adds SGR to the bars only; `bars: false` leaves the bars out. */
 export function summaryLines(state: RunState, options: {columns: number; color: boolean; bars?: boolean}): string[] {
 	const width = Math.max(1, Math.floor(options.columns) - 1);
 	const all = state.suites.flatMap(s => s.states);

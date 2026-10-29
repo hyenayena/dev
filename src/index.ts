@@ -9,7 +9,6 @@ import {killAll} from './spawn.js';
 
 let exitHookInstalled = false;
 
-// Lazy import: nothing but a test run loads React or Ink.
 const loadUi = (): Promise<DevUi> => import('./ui/mount.js').then(m => ({buildTestView: m.buildTestView, color: m.color}));
 
 const plugin: ModulePlugin = host => {

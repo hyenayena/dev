@@ -21,7 +21,6 @@ export type SpawnFn = (args: string[], options: SpawnOptions) => Promise<SpawnRe
 const MAX_LINE = 64 * 1024;
 const STDERR_TAIL = 4 * 1024;
 const KILL_GRACE_MS = 3000;
-// YENA_DEV_CHILD marks the yena process the dev launcher started; checks run from it must not inherit that role.
 const SCRUBBED_ENV = ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'NODE_TEST_CONTEXT', 'YENA_DEV_CHILD'];
 
 const live = new Set<ChildProcess>();
@@ -35,12 +34,10 @@ function killGroup(child: ChildProcess, signal: NodeJS.Signals): void {
 		try {
 			child.kill(signal);
 		} catch {
-			// already gone
 		}
 	}
 }
 
-/** Synchronous, for the process exit hook. */
 export function killAll(): void {
 	for (const child of live) killGroup(child, 'SIGKILL');
 	live.clear();
@@ -97,7 +94,6 @@ export const spawnNode: SpawnFn = (args, options) =>
 			try {
 				options.onLine(line);
 			} catch {
-				// a faulty consumer must not break the run
 			}
 		};
 		let pending = '';
@@ -148,7 +144,6 @@ export const spawnNode: SpawnFn = (args, options) =>
 			reject(err);
 		});
 		child.once('close', (code, sig) => {
-			// The leader may exit on SIGTERM while members of its group linger.
 			if (killRequested) killGroup(child, 'SIGKILL');
 			cleanup();
 			resolve({code, signal: sig, stderr, timedOut, aborted});

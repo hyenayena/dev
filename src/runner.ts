@@ -19,7 +19,6 @@ export type RunDeps = {
 	store: RunStore;
 	log?: Logger;
 	spawn: SpawnFn;
-	/** Only tests whose name matches run (node's --test-name-pattern); no plan is discovered then. */
 	namePattern?: string;
 };
 
@@ -36,7 +35,6 @@ const TMP_PREFIX = 'yena-dev-';
 
 const capped = (value: unknown, max = 500): string => (typeof value === 'string' ? value.slice(0, max) : '');
 
-/** Never throws; anything that is not a record of ours yields undefined. */
 export function parseResultLine(line: string): ResultLine | undefined {
 	if (line.length === 0 || line[0] !== '{') return undefined;
 	try {
@@ -77,7 +75,6 @@ const withTsx = (nodeArgs: string[]): string[] => {
 };
 
 function removeTempDir(dir: string): void {
-	// Only ever delete a directory this run created under the system temp dir.
 	const root = realpathSync(tmpdir());
 	const real = realpathSync(dir);
 	if (path.dirname(real) !== root || !path.basename(real).startsWith(TMP_PREFIX)) return;
@@ -104,7 +101,6 @@ export async function runTests(deps: RunDeps): Promise<RunOutcome> {
 	for (const suite of suites) {
 		try {
 			const parsed = parseTestScript(suite.script);
-			// Chosen files replace the script's globs; its flags stay.
 			scripts.set(suite.name, suite.files ? {...parsed, globs: suite.files} : parsed);
 		} catch {
 			patch(suite.name, s => {
@@ -163,7 +159,6 @@ export async function runTests(deps: RunDeps): Promise<RunOutcome> {
 			await discover(runnable[next++] as Suite);
 		}
 	};
-	// With a name filter the discovered totals would count tests that never run.
 	if (deps.namePattern === undefined) await Promise.all(Array.from({length: Math.min(DISCOVERY_PARALLEL, runnable.length)}, worker));
 
 	const planned = store.get().suites.reduce((n, s) => n + s.planned, 0);
