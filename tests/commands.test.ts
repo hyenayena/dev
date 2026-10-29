@@ -35,12 +35,17 @@ function context(extra: Partial<CommandContext> = {}) {
 	return {printed, ctx};
 }
 
-test('dev and dev help print the usage', async () => {
+test('dev and dev help show the help through ctx.showHelp, or print the usage without it', async () => {
 	const command = createDevCommand({root, loadUi: noUi, spawn});
 	for (const args of [[], ['help']]) {
+		let shown = 0;
+		const withHelp = context({showHelp: () => void shown++});
+		await command.run(args, withHelp.ctx);
+		assert.equal(shown, 1);
+		assert.deepEqual(withHelp.printed, []);
 		const {printed, ctx} = context();
 		await command.run(args, ctx);
-		assert.match(printed.join('\n'), /Usage: dev test\|typecheck\|check \[suite…\] \[--file <path>\]… \[--name <pattern>\]/);
+		assert.deepEqual(printed, ['dev <subcommand>']);
 	}
 });
 

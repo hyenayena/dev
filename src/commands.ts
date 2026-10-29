@@ -25,18 +25,20 @@ export type DevDeps = {
 };
 
 const ARGS = '[suite…] [--file <path>]… [--name <pattern>]';
-const USAGE = `dev test|typecheck|check ${ARGS}`;
-const HELP = [
-	`Usage: ${USAGE}`,
-	'  test       Run the test suites with a live progress bar',
-	'  typecheck  Typecheck the suites with tsc',
-	'  check      Typecheck, then run the tests if the typecheck passed',
-	'Suites: host and the module names; none means all of them.',
-	'--file <path>  Run only this test file (repeatable): absolute, relative to the one named suite,',
-	'               or relative to the yena root. check typechecks the suites the files belong to.',
-	'--name <pattern>  Run only the tests whose name matches (a regular expression).',
-	'Called by the assistant or a job, the summary leaves out the progress bars.',
-].join('\n');
+// The one-line form in usage errors.
+const LINE = `dev test|typecheck|check ${ARGS}`;
+const USAGE = 'dev <subcommand>';
+const SUITE = {name: 'suite', description: 'host or a module name; none: all of them'};
+const TEST_OPTIONS = [
+	{name: '--file', value: '<path>', description: 'Run only this test file', repeatable: true},
+	{name: '--name', value: '<pattern>', description: 'Run only the tests whose name matches (a regular expression)'},
+];
+const FILE_NOTE = '--file: absolute, relative to the one named suite, or relative to the yena root';
+const NOTES = [
+	'Suites: host and the module names; none means all of them',
+	FILE_NOTE,
+	'Called by the assistant or a job, the summary leaves out the progress bars',
+];
 const FALLBACK_COLUMNS = 80;
 const SIGNALS: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 const SUBCOMMANDS = ['test', 'typecheck', 'check'] as const;
@@ -123,20 +125,36 @@ export function createDevCommand(deps: DevDeps): Command {
 
 	return {
 		name: 'dev',
-		description: 'Development tools',
+		description: 'Typecheck and test yena and its modules',
 		usage: USAGE,
+		args: [{name: 'subcommand', description: 'What to do; see the subcommands'}],
+		notes: NOTES,
+		agent: 'confirm',
 		subcommands: [
-			{name: 'test', usage: `dev test ${ARGS}`, description: 'Run the test suites with a live progress bar'},
-			{name: 'typecheck', usage: 'dev typecheck [suite…]', description: 'Typecheck the suites with tsc'},
-			{name: 'check', usage: `dev check ${ARGS}`, description: 'Typecheck, then run the tests if the typecheck passed'},
+			{
+				name: 'test',
+				usage: `dev test ${ARGS}`,
+				description: 'Run the test suites with a live progress bar',
+				args: [SUITE],
+				options: TEST_OPTIONS,
+				notes: [FILE_NOTE],
+				agent: 'confirm',
+			},
+			{name: 'typecheck', usage: 'dev typecheck [suite…]', description: 'Typecheck the suites with tsc', args: [SUITE], agent: 'confirm'},
+			{
+				name: 'check',
+				usage: `dev check ${ARGS}`,
+				description: 'Typecheck, then run the tests if the typecheck passed',
+				args: [SUITE],
+				options: TEST_OPTIONS,
+				notes: [FILE_NOTE, 'With --file, only the suites of the files are typechecked'],
+				agent: 'confirm',
+			},
 		],
 		async run(args, ctx) {
 			const [sub, ...rest] = args;
-			if (sub === undefined || sub === 'help') {
-				ctx.print(HELP);
-				return;
-			}
-			if (!(SUBCOMMANDS as readonly string[]).includes(sub)) throw new Error(`Unknown subcommand: ${sub.slice(0, 64)}. Usage: ${USAGE}`);
+			if (sub === undefined || sub === 'help') return ctx.showHelp ? ctx.showHelp() : ctx.print(USAGE);
+			if (!(SUBCOMMANDS as readonly string[]).includes(sub)) throw new Error(`Unknown subcommand: ${sub.slice(0, 64)}. Usage: ${LINE}`);
 			const mode = sub as Sub;
 			const opts = parseDevArgs(rest);
 			if (mode === 'typecheck' && (opts.files.length > 0 || opts.name !== undefined)) throw new Error('--file and --name apply to tests: use dev test or dev check');
