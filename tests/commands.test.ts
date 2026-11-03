@@ -3,7 +3,8 @@ import {mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {after, test} from 'node:test';
-import type {CommandContext, MountControl} from '../../../src/api.js';
+import type {CommandContext, MountControl, StyledBlock, StyledSpan} from '../../../src/api.js';
+import {plainLines, renderStyled} from '../src/kit.js';
 import {createDevCommand, type DevUi} from '../src/commands.js';
 import type {SpawnFn} from '../src/spawn.js';
 
@@ -95,7 +96,6 @@ test('with mount the view goes to the panel, is closed after the run and the sum
 			events.push('build');
 			return {};
 		},
-		color: () => false,
 	};
 	const command = createDevCommand({root, loadUi: async () => ui, spawn});
 	const {printed, ctx} = context({
@@ -178,6 +178,33 @@ test('typecheck prints one line per suite and a summary', async () => {
 	assert.match(printed[0] as string, /^Typechecking 2 suites/);
 	assert.match(printed[1] as string, /^✔ host typecheck · /);
 	assert.match(printed.at(-1) as string, /^Typecheck: 2\/2 passed · 0 failed · /);
+});
+
+test('with printStyled the typecheck lines are styled blocks, aligned for the human and plain-identical', async () => {
+	const styled: StyledBlock[][] = [];
+	const spansOf = (b: StyledBlock | undefined): StyledSpan[] => (b?.kind === 'line' ? b.spans.map(s => (typeof s === 'string' ? {text: s} : s)) : []);
+	const command = createDevCommand({root, loadUi: noUi, spawn: failingTsc});
+	const {printed, ctx} = context({printStyled: blocks => void styled.push([...blocks])});
+	await command.run(['check'], ctx);
+	assert.deepEqual(printed, ['Typechecking 2 suites...']);
+	const suiteLines = styled.slice(0, 2).map(b => plainLines(b));
+	assert.ok(suiteLines.every(l => /^✖ (host|a) typecheck · 1 error · \S+$/.test(l[0] as string)));
+	assert.ok(suiteLines.every(l => l[1] === '  a.ts(1,1): error TS1005: oops'));
+	const a = styled.slice(0, 2).find(b => plainLines(b)[0]?.startsWith('✖ a '))!;
+	assert.match(renderStyled(a, 80, {color: false}).replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g'), '').split('\n')[0] as string, /^✖ a {4}typecheck · /);
+	const head = spansOf(a[0]);
+	assert.equal(head[0]?.tone, 'error');
+	assert.equal(head.find(s => s.text === 'a')?.bold, true);
+	assert.equal(head.find(s => s.text === '1 error')?.tone, 'error');
+	assert.equal(head.find(s => s.decor === true)?.text, '   ');
+	assert.equal(spansOf(a[1]).some(s => s.tone !== undefined), false);
+	const total = styled[2]!;
+	assert.match(plainLines(total)[0] as string, /^Typecheck: 0\/2 passed · 2 failed · \S+$/);
+	assert.equal(spansOf(total[0])[0]?.bold, true);
+	assert.equal(spansOf(total[0]).find(s => s.text === '0/2 passed')?.tone, 'ok');
+	assert.equal(spansOf(total[0]).find(s => s.text === '2 failed')?.tone, 'error');
+	assert.deepEqual(plainLines(styled[3]), ['Tests skipped: the typecheck did not pass']);
+	assert.equal(spansOf(styled[3]![0])[0]?.tone, 'warn');
 });
 
 test('check runs the tests only after a passing typecheck', async () => {

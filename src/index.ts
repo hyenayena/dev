@@ -9,7 +9,7 @@ import {killAll} from './spawn.js';
 
 let exitHookInstalled = false;
 
-const loadUi = (): Promise<DevUi> => import('./ui/mount.js').then(m => ({buildTestView: m.buildTestView, color: m.color}));
+const loadUi = (): Promise<DevUi> => import('./ui/mount.js').then(m => ({buildTestView: m.buildTestView}));
 
 const plugin: ModulePlugin = host => {
 	const log = host.log ?? noopLog;

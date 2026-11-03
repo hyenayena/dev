@@ -1,18 +1,17 @@
-import type {Command, CommandContext, Logger, MountControl, UiElement} from '../../../src/api.js';
+import type {Command, CommandContext, Logger, MountControl, StyledBlock, StyledSpan, UiElement} from '../../../src/api.js';
 import {parseDevArgs} from './args.js';
 import {formatDuration} from './format.js';
-import {sanitizeText} from './kit.js';
+import {line, printStyled, sanitizeText, span, stringCells} from './kit.js';
 import {runTests} from './runner.js';
 import {spawnNode, type SpawnFn} from './spawn.js';
 import {createRunStore, type RunStore} from './store.js';
 import {assignFiles, findSuites, selectSuites, type Suite} from './suites.js';
-import {summaryLines} from './summary.js';
+import {countSpans, pad, SEP, summaryBlocks} from './summary.js';
 import {runTypecheck, type TypecheckResult} from './typecheck.js';
 import {noopLog} from './log.js';
 
 export type DevUi = {
 	buildTestView(store: RunStore, abort: () => void, control: MountControl): UiElement;
-	color(): boolean;
 };
 
 export type DevDeps = {
@@ -44,17 +43,18 @@ type Sub = (typeof SUBCOMMANDS)[number];
 
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-function typecheckLines(result: TypecheckResult): string[] {
-	const icon = result.status === 'ok' ? '✔' : result.status === 'cancelled' ? '·' : '✖';
-	const parts = [`${icon} ${sanitizeText(result.name, 64)} typecheck`];
-	if (result.errors > 0) parts.push(plural(result.errors, 'error'));
-	if (result.status === 'cancelled') parts.push('cancelled');
-	if (result.note) parts.push(sanitizeText(result.note, 300));
-	parts.push(formatDuration(result.ms));
-	const lines = [parts.join(' · ')];
-	for (const line of result.lines) lines.push(`  ${line}`);
-	if (result.errors > result.lines.length) lines.push(`  +${result.errors - result.lines.length} more errors`);
-	return lines;
+function typecheckBlocks(result: TypecheckResult, nameWidth: number): StyledBlock[] {
+	const icon = result.status === 'ok' ? span('✔', {tone: 'ok'}) : result.status === 'cancelled' ? span('·', {tone: 'muted'}) : span('✖', {tone: 'error'});
+	const name = sanitizeText(result.name, 64);
+	const spans: (string | StyledSpan)[] = [icon, ' ', span(name, {bold: true}), ...pad(nameWidth - stringCells(name)), ' typecheck'];
+	if (result.errors > 0) spans.push(SEP, span(plural(result.errors, 'error'), {tone: 'error'}));
+	if (result.status === 'cancelled') spans.push(SEP, span('cancelled', {tone: 'warn'}));
+	if (result.note) spans.push(SEP, span(sanitizeText(result.note, 300), {tone: 'warn'}));
+	spans.push(SEP, span(formatDuration(result.ms), {tone: 'muted'}));
+	const blocks = [line(...spans)];
+	for (const l of result.lines) blocks.push(line(`  ${l}`));
+	if (result.errors > result.lines.length) blocks.push(line('  ', span(`+${result.errors - result.lines.length} more errors`, {tone: 'warn'})));
+	return blocks;
 }
 
 function abortOnSignals(controller: AbortController): () => void {
@@ -72,18 +72,28 @@ export function createDevCommand(deps: DevDeps): Command {
 	const typecheckPhase = async (suites: Suite[], controller: AbortController, ctx: CommandContext, root: string): Promise<number> => {
 		ctx.print(`Typechecking ${plural(suites.length, 'suite')}...`);
 		const started = Date.now();
+		const nameWidth = Math.max(0, ...suites.map(s => stringCells(sanitizeText(s.name, 64))));
 		const results = await runTypecheck({
 			suites,
 			root,
 			signal: controller.signal,
 			spawn: deps.spawn ?? spawnNode,
 			log,
-			onSuite: result => ctx.print(typecheckLines(result).join('\n')),
+			onSuite: result => printStyled(ctx, typecheckBlocks(result, nameWidth)),
 		});
 		const passed = results.filter(r => r.status === 'ok').length;
 		const cancelled = results.filter(r => r.status === 'cancelled').length;
 		const failed = results.length - passed - cancelled;
-		ctx.print(`Typecheck: ${passed}/${results.length} passed · ${failed} failed${cancelled ? ` · ${cancelled} cancelled` : ''} · ${formatDuration(Date.now() - started)}`);
+		printStyled(ctx, [
+			line(
+				span('Typecheck:', {bold: true}),
+				' ',
+				...countSpans(passed, results.length, failed),
+				...(cancelled ? [SEP, span(`${cancelled} cancelled`, {tone: 'warn'})] : []),
+				SEP,
+				span(formatDuration(Date.now() - started), {tone: 'muted'}),
+			),
+		]);
 		return results.length - passed;
 	};
 
@@ -91,10 +101,8 @@ export function createDevCommand(deps: DevDeps): Command {
 		const store = createRunStore();
 		let view: MountControl | undefined;
 		let shown: Promise<void> | undefined;
-		let color = false;
 		if (ctx.mount) {
 			const ui = await deps.loadUi();
-			color = ui.color();
 			shown = ctx.mount(
 				control => {
 					view = control;
@@ -114,7 +122,7 @@ export function createDevCommand(deps: DevDeps): Command {
 		}
 		const columns = view?.host?.columns() ?? FALLBACK_COLUMNS;
 		const state = store.get();
-		ctx.print(summaryLines(state, {columns, color, bars: ctx.signal === undefined}).join('\n'));
+		printStyled(ctx, summaryBlocks(state, {columns, bars: ctx.signal === undefined}));
 		const bad = state.suites.filter(s => s.status !== 'passed').length;
 		return state.phase === 'cancelled' ? Math.max(1, bad) : bad;
 	};
@@ -182,7 +190,7 @@ export function createDevCommand(deps: DevDeps): Command {
 				try {
 					if (mode !== 'test') failed += await typecheckPhase(typecheckSuites, controller, ctx, root);
 					if (mode !== 'typecheck') {
-						if (failed > 0) ctx.print('Tests skipped: the typecheck did not pass');
+						if (failed > 0) printStyled(ctx, [line(span('Tests skipped: the typecheck did not pass', {tone: 'warn'}))]);
 						else failed += await testPhase(testSuites, controller, ctx, opts.name);
 					}
 				} finally {
