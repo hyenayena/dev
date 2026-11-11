@@ -1,10 +1,13 @@
 {
 	"name": "dev",
-	"version": "0.5.0",
+	"version": "0.5.1",
 	"description": "Development tools: dev test runs every test suite with a live progress bar",
 	"runtime": "node",
 	"entry": "src/index.ts",
 	"dependencies": {
-		"core": "git@github.com:hyenayena/core.git"
+		"core": {
+			"source": "core",
+			"version": "^0.22.0"
+		}
 	}
 }
