@@ -22,6 +22,8 @@ Which yena root is checked (`src/root.ts` `targetRoot`, asked on every run): the
 
 `dev typecheck` parses each suite's `typecheck` script (`src/typecheck.ts`), never through a shell: only `tsc` steps with `--noEmit` and `-p/--project <path>`, joined by `&&`; the tsc realpath must be inside the root; `--noEmit` is appended.
 
+Activity: the run reports one row (`dev test|typecheck|check`) to the console panel's activity row through core's `reportActivity` on the host bus: progress by suite (typecheck) and by test, then `ok`, `failed` or `cancelled`; no test or file name goes into the label.
+
 ## Layout
 
 `src/`: `index.ts` (plugin), `commands.ts`, `args.ts` (options), `suites.ts`, `script.ts`, `typecheck.ts`, `spawn.ts` (the only place that spawns), `tmp.ts` (the `yena-dev-*` temp dirs: make, remove, sweep, heartbeat), `runner.ts`, `store.ts` (outside React so the panel toggle keeps state), `layout.ts`, `summary.ts`, `format.ts`, `child/`, `ui/` (lazy: `TestView.tsx`, `mount.ts`). `kit.ts` and `ui/kit.ts` are the only files that import core (enforced by `tests/kit-boundary.test.ts`); `index.ts` never reaches react, ink or the kit UI statically.

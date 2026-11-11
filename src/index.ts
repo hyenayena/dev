@@ -25,6 +25,7 @@ const plugin: ModulePlugin = host => {
 			root: () => targetRoot(root, host.build),
 			log,
 			loadUi,
+			events: host.events,
 			onRun: () => {
 				if (exitHookInstalled) return;
 				exitHookInstalled = true;

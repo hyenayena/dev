@@ -3,8 +3,8 @@ import {mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {after, test} from 'node:test';
-import type {CommandContext, MountControl, StyledBlock, StyledSpan} from '../../../src/api.js';
-import {plainLines, renderStyled} from '../src/kit.js';
+import type {CommandContext, EventBus, MountControl, StyledBlock, StyledSpan} from '../../../src/api.js';
+import {plainLines, renderStyled, type ActivityReport} from '../src/kit.js';
 import {createDevCommand, type DevUi} from '../src/commands.js';
 import type {SpawnFn} from '../src/spawn.js';
 
@@ -379,4 +379,39 @@ test('a --name that matches no test prints a warning, the exit status is unchang
 	const plain = context();
 	await createDevCommand({root, loadUi: noUi, spawn}).run(['test', 'a', '--name', 'zzz'], plain.ctx);
 	assert.ok(!plain.printed.some(p => p.includes('No test matched')));
+});
+
+test('a dev run reports its activity in order and works without a bus', async () => {
+	const reports: ActivityReport[] = [];
+	const events = {emit: (_topic: string, payload: unknown) => void reports.push(payload as ActivityReport)} as unknown as EventBus;
+	const command = createDevCommand({root, loadUi: noUi, spawn, events});
+	await command.run(['check', 'a'], context().ctx);
+	assert.ok(reports.length >= 3);
+	assert.ok(reports.every(r => r.source === 'dev' && r.id === 'run' && r.label === 'dev check'));
+	assert.equal(reports[0]?.state, 'running');
+	assert.deepEqual(
+		reports.filter(r => r.detail === 'typecheck').map(r => r.done),
+		[0, 1],
+	);
+	assert.ok(reports.some(r => r.detail === 'tests' && r.done === 2 && r.total === 2));
+	assert.equal(reports.at(-1)?.state, 'ok');
+	await createDevCommand({root, loadUi: noUi, spawn}).run(['test', 'a'], context().ctx);
+});
+
+test('a failing run ends as failed', async () => {
+	const reports: ActivityReport[] = [];
+	const events = {emit: (_topic: string, payload: unknown) => void reports.push(payload as ActivityReport)} as unknown as EventBus;
+	const bad: SpawnFn = async () => {
+		throw new Error('spawn failed');
+	};
+	await Promise.resolve(createDevCommand({root, loadUi: noUi, spawn: bad, events}).run(['test', 'a'], context().ctx)).catch(() => {});
+	assert.equal(reports.at(-1)?.state, 'failed');
+});
+
+test('dev activity reports never carry the arguments of the run', async () => {
+	const reports: ActivityReport[] = [];
+	const events = {emit: (_topic: string, payload: unknown) => void reports.push(payload as ActivityReport)} as unknown as EventBus;
+	await createDevCommand({root, loadUi: noUi, spawn, events}).run(['test', 'a', '--name', 'hunter2-pattern'], context().ctx);
+	assert.ok(reports.length > 0);
+	assert.equal(/hunter2/.test(JSON.stringify(reports)), false);
 });

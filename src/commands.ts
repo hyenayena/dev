@@ -1,7 +1,7 @@
-import type {Command, CommandContext, Logger, MountControl, StyledBlock, StyledSpan, UiElement} from '../../../src/api.js';
+import type {Command, CommandContext, EventBus, Logger, MountControl, StyledBlock, StyledSpan, UiElement} from '../../../src/api.js';
 import {parseDevArgs} from './args.js';
 import {formatDuration} from './format.js';
-import {line, printStyled, sanitizeText, span, stringCells} from './kit.js';
+import {line, printStyled, reportActivity, sanitizeText, span, stringCells, type ActivityState} from './kit.js';
 import {runTests} from './runner.js';
 import {spawnNode, type SpawnFn} from './spawn.js';
 import {createRunStore, type RunStore} from './store.js';
@@ -20,6 +20,7 @@ export type DevDeps = {
 	loadUi: () => Promise<DevUi>;
 	spawn?: SpawnFn;
 	onRun?: () => void;
+	events?: EventBus;
 };
 
 const ARGS = '[suite…] [--file <path>]… [--name <pattern>]';
@@ -40,6 +41,8 @@ const FALLBACK_COLUMNS = 80;
 const SIGNALS: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 const SUBCOMMANDS = ['test', 'typecheck', 'check'] as const;
 type Sub = (typeof SUBCOMMANDS)[number];
+
+const ACTIVITY_THROTTLE_MS = 250;
 
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -68,18 +71,27 @@ function abortOnSignals(controller: AbortController): () => void {
 export function createDevCommand(deps: DevDeps): Command {
 	const log = deps.log ?? noopLog;
 	let running = false;
+	let runLabel = '';
+
+	const report = (state: ActivityState, extra: {done?: number; total?: number; detail?: string} = {}): void =>
+		reportActivity(deps.events, {source: 'dev', id: 'run', label: runLabel, state, ...extra});
 
 	const typecheckPhase = async (suites: Suite[], controller: AbortController, ctx: CommandContext, root: string): Promise<number> => {
 		ctx.print(`Typechecking ${plural(suites.length, 'suite')}...`);
 		const started = Date.now();
 		const nameWidth = Math.max(0, ...suites.map(s => stringCells(sanitizeText(s.name, 64))));
+		let doneSuites = 0;
+		report('running', {done: 0, total: suites.length, detail: 'typecheck'});
 		const results = await runTypecheck({
 			suites,
 			root,
 			signal: controller.signal,
 			spawn: deps.spawn ?? spawnNode,
 			log,
-			onSuite: result => printStyled(ctx, typecheckBlocks(result, nameWidth)),
+			onSuite: result => {
+				printStyled(ctx, typecheckBlocks(result, nameWidth));
+				report('running', {done: ++doneSuites, total: suites.length, detail: 'typecheck'});
+			},
 		});
 		const passed = results.filter(r => r.status === 'ok').length;
 		const cancelled = results.filter(r => r.status === 'cancelled').length;
@@ -114,9 +126,23 @@ export function createDevCommand(deps: DevDeps): Command {
 		} else {
 			ctx.print(`Running ${plural(suites.length, 'test suite')}...`);
 		}
+		let lastReport = 0;
+		const reportTests = (final: boolean): void => {
+			const now = Date.now();
+			if (!final && now - lastReport < ACTIVITY_THROTTLE_MS) return;
+			lastReport = now;
+			const all = store.get().suites;
+			const total = all.reduce((n, s) => n + s.planned, 0);
+			const done = Math.min(total, all.reduce((n, s) => n + s.states.length, 0));
+			report('running', {done, total, detail: 'tests'});
+		};
+		reportTests(true);
+		const unsubscribe = store.subscribe(() => reportTests(false));
 		try {
 			await runTests({suites, signal: controller.signal, store, log, spawn: deps.spawn ?? spawnNode, ...(namePattern === undefined ? {} : {namePattern})});
 		} finally {
+			unsubscribe();
+			reportTests(true);
 			view?.close();
 			if (shown) await shown.catch(() => {});
 		}
@@ -183,6 +209,8 @@ export function createDevCommand(deps: DevDeps): Command {
 				if (mode !== 'typecheck' && testSuites.length === 0) throw new Error('No test suites found');
 
 				deps.onRun?.();
+				runLabel = `dev ${mode}`;
+				report('running');
 				const controller = new AbortController();
 				if (ctx.headless) removeSignals = abortOnSignals(controller);
 				const onAbort = (): void => controller.abort();
@@ -199,9 +227,14 @@ export function createDevCommand(deps: DevDeps): Command {
 				} finally {
 					ctx.signal?.removeEventListener('abort', onAbort);
 				}
+				report(controller.signal.aborted ? 'cancelled' : failed > 0 ? 'failed' : 'ok');
 				if (ctx.headless && failed > 0) throw new Error(`${plural(failed, 'suite')} failed`);
+			} catch (err) {
+				if (runLabel !== '') report('failed');
+				throw err;
 			} finally {
 				removeSignals?.();
+				runLabel = '';
 				running = false;
 			}
 		},
