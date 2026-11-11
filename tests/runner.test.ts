@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {existsSync, mkdtempSync, realpathSync, rmSync} from 'node:fs';
+import {existsSync, mkdtempSync, realpathSync, rmSync, utimesSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {after, test} from 'node:test';
@@ -253,4 +253,115 @@ test('killAll kills every live process group synchronously', async () => {
 	const outcome = await running;
 	assert.equal(outcome.signal, 'SIGKILL');
 	assert.ok(await waitGone(pids));
+});
+
+const realTmp = (): string => realpathSync(tmpdir());
+
+function assertOwnTmp(dirs: string[], discoveryDirs: string[]): void {
+	assert.equal(new Set(dirs).size, dirs.length);
+	for (const dir of dirs) {
+		assert.equal(path.dirname(dir), realTmp());
+		assert.ok(path.basename(dir).startsWith('yena-dev-'));
+		assert.ok(!discoveryDirs.includes(dir));
+		assert.equal(existsSync(dir), false);
+	}
+}
+
+test('each suite runs with its own TMPDIR, deleted after the run', async () => {
+	const store = createRunStore();
+	const discoveryDirs: string[] = [];
+	const dirs: string[] = [];
+	const spawn = fakeSpawn((kind, _i, options) => {
+		const dir = options.env?.TMPDIR as string;
+		assert.ok(existsSync(dir));
+		if (kind === 'discover') {
+			discoveryDirs.push(dir);
+			options.onLine(discovered(1));
+		} else {
+			dirs.push(dir);
+			options.onLine(result('pass'));
+		}
+		return ok;
+	});
+	await runTests({suites: [suite('a'), suite('b')], signal: new AbortController().signal, store, spawn});
+	assert.equal(dirs.length, 2);
+	assertOwnTmp(dirs, discoveryDirs);
+});
+
+test('the run TMPDIR is deleted after a failing suite', async () => {
+	const store = createRunStore();
+	const dirs: string[] = [];
+	const spawn = fakeSpawn((kind, _i, options) => {
+		if (kind === 'discover') {
+			options.onLine(discovered(1));
+			return ok;
+		}
+		dirs.push(options.env?.TMPDIR as string);
+		options.onLine(result('fail', 'x', {error: 'bad'}));
+		return {...ok, code: 1};
+	});
+	const outcome = await runTests({suites: [suite('a')], signal: new AbortController().signal, store, spawn});
+	assert.equal(outcome, 'failed');
+	assertOwnTmp(dirs, []);
+});
+
+test('the run TMPDIR is deleted when the spawn throws', async () => {
+	const store = createRunStore();
+	const dirs: string[] = [];
+	const spawn = fakeSpawn((kind, _i, options) => {
+		if (kind === 'discover') {
+			options.onLine(discovered(1));
+			return ok;
+		}
+		dirs.push(options.env?.TMPDIR as string);
+		throw new Error('no spawn');
+	});
+	await runTests({suites: [suite('a')], signal: new AbortController().signal, store, spawn});
+	assert.equal(store.get().suites[0]?.note, 'could not start the test process');
+	assertOwnTmp(dirs, []);
+});
+
+test('the run TMPDIR is deleted after an abort', async () => {
+	const store = createRunStore();
+	const controller = new AbortController();
+	const dirs: string[] = [];
+	const spawn = fakeSpawn((kind, _i, options) => {
+		if (kind === 'discover') {
+			options.onLine(discovered(1));
+			return ok;
+		}
+		dirs.push(options.env?.TMPDIR as string);
+		controller.abort();
+		return {...ok, code: null, aborted: true};
+	});
+	await runTests({suites: [suite('a'), suite('b')], signal: controller.signal, store, spawn});
+	assert.equal(dirs.length, 1);
+	assertOwnTmp(dirs, []);
+});
+
+test('a run filtered by name (no discovery) still gets a TMPDIR', async () => {
+	const store = createRunStore();
+	const dirs: string[] = [];
+	const spawn = fakeSpawn((kind, _i, options) => {
+		assert.equal(kind, 'run');
+		dirs.push(options.env?.TMPDIR as string);
+		return ok;
+	});
+	await runTests({suites: [suite('a')], signal: new AbortController().signal, store, spawn, namePattern: 'x'});
+	assertOwnTmp(dirs, []);
+});
+
+test('a run sweeps stale yena-dev dirs in the real tmpdir and keeps fresh ones', async () => {
+	const staleDir = mkdtempSync(path.join(realTmp(), 'yena-dev-'));
+	const freshDir = mkdtempSync(path.join(realTmp(), 'yena-dev-'));
+	try {
+		const t = new Date(Date.now() - 20 * 60_000);
+		utimesSync(staleDir, t, t);
+		await runTests({suites: [suite('a')], signal: new AbortController().signal, store: createRunStore(), spawn: fakeSpawn(() => ok), namePattern: 'x'});
+		assert.equal(existsSync(staleDir), false);
+		assert.ok(existsSync(freshDir));
+	} finally {
+		rmSync(staleDir, {recursive: true, force: true});
+		rmSync(freshDir, {recursive: true, force: true});
+	}
 });

@@ -6,6 +6,7 @@ import {createDevCommand, type DevUi} from './commands.js';
 import {noopLog} from './log.js';
 import {targetRoot} from './root.js';
 import {killAll} from './spawn.js';
+import {removeLiveTempDirs} from './tmp.js';
 
 let exitHookInstalled = false;
 
@@ -27,7 +28,10 @@ const plugin: ModulePlugin = host => {
 			onRun: () => {
 				if (exitHookInstalled) return;
 				exitHookInstalled = true;
-				process.once('exit', killAll);
+				process.once('exit', () => {
+					killAll();
+					removeLiveTempDirs();
+				});
 			},
 		}),
 	];

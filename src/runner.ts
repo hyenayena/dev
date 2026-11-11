@@ -1,6 +1,3 @@
-import {mkdtempSync, realpathSync, rmSync} from 'node:fs';
-import {tmpdir} from 'node:os';
-import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import type {Logger} from '../../../src/api.js';
 import type {DotState} from './kit.js';
@@ -10,6 +7,7 @@ import {parseTestScript, type TestScript} from './script.js';
 import type {SpawnFn, SpawnResult} from './spawn.js';
 import type {RunStore, SuiteState} from './store.js';
 import type {Suite} from './suites.js';
+import {makeTempDir, removeTempDir, startHeartbeat, sweepStaleTempDirs} from './tmp.js';
 
 export type RunOutcome = 'ok' | 'failed' | 'cancelled';
 
@@ -31,7 +29,6 @@ const DISCOVERY_TIMEOUT_MS = 30_000;
 const MAX_FAILURES = 200;
 const MAX_TOTAL = 1_000_000;
 const KINDS = new Set(['pass', 'fail', 'skip', 'todo']);
-const TMP_PREFIX = 'yena-dev-';
 
 const capped = (value: unknown, max = 500): string => (typeof value === 'string' ? value.slice(0, max) : '');
 
@@ -74,18 +71,26 @@ const withTsx = (nodeArgs: string[]): string[] => {
 	return [...nodeArgs, '--import', 'tsx'];
 };
 
-function removeTempDir(dir: string): void {
-	const root = realpathSync(tmpdir());
-	const real = realpathSync(dir);
-	if (path.dirname(real) !== root || !path.basename(real).startsWith(TMP_PREFIX)) return;
-	rmSync(real, {recursive: true, force: true});
-}
-
 const count = (states: DotState[], wanted: DotState): number => states.filter(s => s === wanted).length;
 
 export async function runTests(deps: RunDeps): Promise<RunOutcome> {
-	const {suites, signal, store, spawn} = deps;
 	const log = deps.log ?? noopLog;
+	try {
+		const removed = sweepStaleTempDirs({log});
+		if (removed > 0) log.info('stale temp dirs removed', {count: removed});
+	} catch (err) {
+		log.warn('stale temp dir sweep failed', {err});
+	}
+	const stopHeartbeat = startHeartbeat();
+	try {
+		return await execute(deps, log);
+	} finally {
+		stopHeartbeat();
+	}
+}
+
+async function execute(deps: RunDeps, log: Logger): Promise<RunOutcome> {
+	const {suites, signal, store, spawn} = deps;
 	const scripts = new Map<string, TestScript>();
 
 	const patch = (name: string, mutate: (s: SuiteState) => void): void =>
@@ -116,7 +121,7 @@ export async function runTests(deps: RunDeps): Promise<RunOutcome> {
 
 	const discover = async (suite: Suite): Promise<void> => {
 		const script = scripts.get(suite.name) as TestScript;
-		const tmp = mkdtempSync(path.join(realpathSync(tmpdir()), TMP_PREFIX));
+		const tmp = makeTempDir();
 		let total: number | undefined;
 		let code: number | null | undefined;
 		let failure: unknown;
@@ -180,6 +185,17 @@ export async function runTests(deps: RunDeps): Promise<RunOutcome> {
 		});
 		let result: SpawnResult | undefined;
 		let startError: unknown;
+		let tmp: string;
+		try {
+			tmp = makeTempDir();
+		} catch (err) {
+			log.warn('temp dir creation failed', {suite: suite.name, err});
+			patch(suite.name, s => {
+				s.status = 'error';
+				s.note = 'could not create a temp dir';
+			});
+			return;
+		}
 		try {
 			result = await spawn(
 				[
@@ -193,6 +209,7 @@ export async function runTests(deps: RunDeps): Promise<RunOutcome> {
 				],
 				{
 					cwd: suite.dir,
+					env: {TMPDIR: tmp},
 					signal,
 					onLine: line => {
 						const item = parseResultLine(line);
@@ -210,6 +227,12 @@ export async function runTests(deps: RunDeps): Promise<RunOutcome> {
 			);
 		} catch (err) {
 			startError = err;
+		} finally {
+			try {
+				removeTempDir(tmp);
+			} catch (err) {
+				log.warn('temp dir cleanup failed', {suite: suite.name, err});
+			}
 		}
 		const ms = Date.now() - started;
 		const states = store.get().suites.find(s => s.name === suite.name)?.states ?? [];
