@@ -369,3 +369,14 @@ test('a root given as a function is asked on every run, and its error ends the r
 	assert.equal(calls, 2);
 	assert.match(printed.at(-1) as string, /^Tests: 2\/2 passed/);
 });
+
+test('a --name that matches no test prints a warning, the exit status is unchanged', async () => {
+	const none: SpawnFn = async (args, options) => (args.some(a => a.endsWith('discover.ts')) ? spawn(args, options) : done);
+	const command = createDevCommand({root, loadUi: noUi, spawn: none});
+	const matched = context();
+	await command.run(['test', 'a', '--name', 'zzz'], matched.ctx);
+	assert.ok(matched.printed.some(p => p.includes('No test matched --name zzz')));
+	const plain = context();
+	await createDevCommand({root, loadUi: noUi, spawn}).run(['test', 'a', '--name', 'zzz'], plain.ctx);
+	assert.ok(!plain.printed.some(p => p.includes('No test matched')));
+});

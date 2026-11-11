@@ -123,6 +123,9 @@ export function createDevCommand(deps: DevDeps): Command {
 		const columns = view?.host?.columns() ?? FALLBACK_COLUMNS;
 		const state = store.get();
 		printStyled(ctx, summaryBlocks(state, {columns, bars: ctx.signal === undefined}));
+		if (namePattern !== undefined && state.phase !== 'cancelled' && state.suites.every(s => s.states.length === 0)) {
+			printStyled(ctx, [line(span(`No test matched --name ${sanitizeText(namePattern, 80)}`, {tone: 'warn'}))]);
+		}
 		const bad = state.suites.filter(s => s.status !== 'passed').length;
 		return state.phase === 'cancelled' ? Math.max(1, bad) : bad;
 	};

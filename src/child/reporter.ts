@@ -6,6 +6,7 @@ type TestEvent = {
 	data?: {
 		name?: unknown;
 		file?: unknown;
+		nesting?: unknown;
 		skip?: unknown;
 		todo?: unknown;
 		details?: {type?: unknown; duration_ms?: unknown; error?: {message?: unknown; cause?: {message?: unknown}}};
@@ -31,6 +32,8 @@ export default async function* reporter(source: AsyncIterable<TestEvent>): Async
 		if (event.type !== 'test:pass' && event.type !== 'test:fail') continue;
 		const data = event.data;
 		if (!data || data.details?.type === 'suite') continue;
+		// A --test-name-pattern that matches nothing in a file still reports the file itself as passed.
+		if (event.type === 'test:pass' && data.nesting === 0 && String(data.name) === relativeFile(data.file)) continue;
 		const kind =
 			event.type === 'test:fail' ? 'fail' : data.skip !== undefined && data.skip !== false ? 'skip' : data.todo !== undefined && data.todo !== false ? 'todo' : 'pass';
 		const record: Record<string, unknown> = {

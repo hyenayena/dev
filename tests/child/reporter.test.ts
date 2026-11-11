@@ -30,3 +30,20 @@ test('suites are excluded, files are relative, errors are one line', async () =>
 	assert.equal(records.find(r => r.kind === 'fail')?.error, 'boom');
 	assert.ok(records.every(r => typeof r.ms === 'number'));
 });
+
+test('a name pattern that matches nothing emits no file-level pass', async () => {
+	const result = await collect(
+		['--import', 'tsx', '--test', '--test-name-pattern=no such test anywhere', `--test-reporter=${reporterScript}`, '--test-reporter-destination=stdout', 'basic.fixture.ts'],
+		suiteFixtures,
+	);
+	assert.deepEqual(result.lines, []);
+});
+
+test('a file that fails to load still counts as a failure', async () => {
+	const result = await collect(
+		['--import', 'tsx', '--test', `--test-reporter=${reporterScript}`, '--test-reporter-destination=stdout', 'broken.fixture.ts'],
+		suiteFixtures,
+	);
+	const records = result.lines.map(l => JSON.parse(l) as Line);
+	assert.ok(records.some(r => r.kind === 'fail' && r.file === 'broken.fixture.ts'));
+});

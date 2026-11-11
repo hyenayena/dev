@@ -29,7 +29,7 @@ for (const file of [...files].sort()) {
 	const before = shim.discovery.total;
 	try {
 		await import(pathToFileURL(path.resolve(cwd, file)).href);
-		total += Math.max(1, shim.discovery.total - before);
+		total += shim.discovery.total - before;
 	} catch {
 		total += 1;
 	}

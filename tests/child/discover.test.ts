@@ -25,7 +25,7 @@ test('the discovered count equals the number of results of a real run', async ()
 	);
 	const results = real.lines.filter(l => l.startsWith('{"dev":1'));
 	assert.equal(record.total, results.length);
-	assert.equal(record.total, 8);
+	assert.equal(record.total, 7);
 });
 
 test('discovery never runs a test body', async () => {
@@ -40,7 +40,7 @@ test('top-level temp files land in TMPDIR', async () => {
 	assert.ok(readdirSync(tmp).some(name => name.startsWith('devfx-')));
 });
 
-test('an empty file and a file that fails to import count as one each', async () => {
+test('an empty file counts as none and a file that fails to import as one', async () => {
 	const result = await collect([...tsx, discoverScript, 'empty.fixture.ts', 'broken.fixture.ts'], suiteFixtures, {TMPDIR: work});
-	assert.deepEqual(JSON.parse(result.lines.at(-1) as string), {dev: 1, kind: 'discovered', total: 2, files: 2});
+	assert.deepEqual(JSON.parse(result.lines.at(-1) as string), {dev: 1, kind: 'discovered', total: 1, files: 2});
 });
