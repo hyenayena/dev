@@ -19,7 +19,7 @@ const plugin: ModulePlugin = host => {
 	if (!existsSync(path.join(root, 'package.json')) || !existsSync(path.join(root, 'modules'))) {
 		throw new Error('dev must be installed inside a yena checkout');
 	}
-	log.info('plugin loaded');
+	log.debug('plugin loaded');
 	return [
 		createDevCommand({
 			root: () => targetRoot(root, host.build),
