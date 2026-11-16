@@ -1,9 +1,10 @@
 {
 	"name": "dev",
-	"version": "0.7.1",
+	"version": "0.7.2",
 	"description": "Development tools: dev test runs every test suite with a live progress bar",
 	"runtime": "node",
 	"entry": "src/index.ts",
+	"export": {"deny": []},
 	"dependencies": {
 		"core": {
 			"source": "core",
