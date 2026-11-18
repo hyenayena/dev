@@ -1,7 +1,7 @@
 import React, {useSyncExternalStore} from 'react';
 import {Box, Text, useInput} from 'ink';
 import type {ViewHost} from '../../../../src/api.js';
-import {BrailleBar, SPINNERS, useSpinnerFrame, useViewHost} from './kit.js';
+import {BrailleBar, useSpinner, useViewHost} from './kit.js';
 import {layoutRun, SPINNER_ICON} from '../layout.js';
 import type {RunStore} from '../store.js';
 
@@ -20,7 +20,7 @@ export function TestView({store, abort, host, rows}: TestViewProps) {
 	const state = useSyncExternalStore(store.subscribe, store.get);
 	const {focused, columns} = useViewHost(host);
 	const active = state.phase === 'discovering' || state.phase === 'running';
-	const frame = useSpinnerFrame(SPINNERS.braille, 80, active);
+	const frame = useSpinner(active);
 
 	useInput(
 		(input, key) => {

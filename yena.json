@@ -1,6 +1,6 @@
 {
 	"name": "dev",
-	"version": "0.7.2",
+	"version": "0.7.3",
 	"description": "Development tools: dev test runs every test suite with a live progress bar",
 	"runtime": "node",
 	"entry": "src/index.ts",
@@ -8,7 +8,7 @@
 	"dependencies": {
 		"core": {
 			"source": "core",
-			"version": "^0.22.2"
+			"version": "^0.23.0"
 		}
 	}
 }
